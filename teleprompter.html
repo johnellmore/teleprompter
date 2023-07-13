@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>teleprompter</title>
+    <style>
+      html {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+          "Segoe UI Symbol";
+        font-size: 16px;
+        line-height: 1.6;
+      }
+
+      body {
+        margin: 0;
+        background-color: white;
+      }
+
+      p {
+        margin: 1.5em 0;
+      }
+
+      .interface {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 1em;
+      }
+
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        height: 50vh;
+        font-family: inherit;
+        overflow: scroll;
+        color: inherit;
+        resize: vertical;
+      }
+
+      body:fullscreen button {
+        display: none;
+      }
+
+      p {
+        margin: 1.5em 0;
+      }
+
+      kbd {
+        border: 2px solid white;
+        border-radius: 2px;
+        /* font-size: 0.825rem; */
+        padding: 0 0.25rem;
+      }
+
+      #teleprompter {
+        display: none;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
+        position: absolute;
+        z-index: 100;
+        top: 100px;
+        left: 100px;
+        width: 800px;
+        height: 600px;
+        background-color: black;
+        color: white;
+      }
+
+      #teleprompter:fullscreen {
+        display: flex;
+      }
+
+      #prompt-area {
+        position: relative;
+        /* Using inches here; we want to constrain the prompted text contents to
+        a small physical/real-world area near the camera */
+        width: 9in;
+        height: 4in;
+        overflow: hidden;
+      }
+
+      #prompt-area::after {
+        content: " ";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2in;
+        background-image: linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0),
+          rgba(0, 0, 0, 1)
+        );
+      }
+
+      #prompt-contents {
+        white-space: pre-wrap;
+        font-size: 2em;
+      }
+
+      #prompt-instructions {
+        max-width: 550px;
+        padding: 1em;
+        background-color: #666;
+        line-height: 1.9;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="interface">
+      <h1>Teleprompter</h1>
+      <p>
+        This is a simple text "teleprompter" for use with laptops or monitors
+        with a webcam just above the screen. It will show your custom text
+        centered near the top of your screen, and slowly scrolls through it. The
+        scroll speed is controllable in real-time. The makes it easy to read
+        your text while looking near the camera.
+      </p>
+      <p>
+        <strong>Usage:</strong> Enter in the text to show in the teleprompter,
+        then click the "Launch teleprompter mode" button. This shows a
+        fullscreen black window scrolling your text. Tap the arrow keys to
+        adjust scroll speed (slow down, speed up, or even reverse the scroll
+        direction).
+      </p>
+      <textarea
+        autofocus
+        placeholder="Enter your text to show in the teleprompter view"
+      ></textarea>
+      <button>Launch teleprompter mode</button>
+      <div id="teleprompter">
+        <div id="prompt-area">
+          <div id="prompt-contents"></div>
+        </div>
+        <p id="prompt-instructions">
+          Press <kbd>Up</kbd> or <kbd>Down</kbd> arrows keys to control
+          scrolling velocity.<br />
+          Press <kbd>Enter</kbd> to jump to the beginning.<br />
+          Press <kbd>Esc</kbd> to exit.
+        </p>
+      </div>
+      <script>
+        const btn = document.querySelector("button");
+        const textarea = document.querySelector("textarea");
+        const promptInterface = document.querySelector("#teleprompter");
+        const promptText = document.querySelector("#prompt-contents");
+
+        btn.addEventListener("click", () => {
+          if (!document.fullscreenElement) {
+            promptInterface.requestFullscreen();
+          }
+        });
+
+        const DEFAULT_SCROLL_SPEED = 30;
+        const MAX_SPEED = 150;
+        const SPEED_INCREMENT = 15;
+        let verticalOffsetPx = 0;
+        let scrollPxPerSecond = 0;
+
+        function resetScrollPositionAndSpeed() {
+          verticalOffsetPx = -3 * DEFAULT_SCROLL_SPEED;
+          scrollPxPerSecond = DEFAULT_SCROLL_SPEED;
+        }
+
+        function doAnimation(deltaMs) {
+          verticalOffsetPx += scrollPxPerSecond * (deltaMs / 1000);
+          promptText.style.transform = `translateY(${-1 * verticalOffsetPx}px)`;
+        }
+
+        function handleKeyDown(ev) {
+          if (ev.key === "ArrowUp") {
+            scrollPxPerSecond = Math.max(
+              -1 * MAX_SPEED,
+              scrollPxPerSecond - 15
+            );
+          } else if (ev.key === "ArrowDown") {
+            scrollPxPerSecond = Math.min(MAX_SPEED, scrollPxPerSecond + 15);
+          } else if (ev.key === "Enter") {
+            resetScrollPositionAndSpeed();
+          }
+        }
+
+        function runAnimationLoop(animationFn) {
+          let isCancelled = false;
+          let lastFrameTime = Date.now();
+          function loop() {
+            if (isCancelled) {
+              return;
+            }
+            const now = Date.now();
+            const deltaMs = now - lastFrameTime;
+            lastFrameTime = now;
+            animationFn(deltaMs);
+            requestAnimationFrame(loop);
+          }
+          requestAnimationFrame(loop);
+          return () => {
+            isCancelled = true;
+          };
+        }
+
+        let animationCancelFn = null;
+        document.addEventListener("fullscreenchange", () => {
+          if (document.fullscreenElement === promptInterface) {
+            resetScrollPositionAndSpeed();
+            promptText.innerText = textarea.value;
+            document.addEventListener("keydown", handleKeyDown);
+            animationCancelFn = runAnimationLoop(doAnimation);
+          } else {
+            promptText.innerText = "";
+            document.removeEventListener("keydown", handleKeyDown);
+            if (animationCancelFn) {
+              animationCancelFn();
+            }
+          }
+        });
+      </script>
+    </div>
+  </body>
+</html>
